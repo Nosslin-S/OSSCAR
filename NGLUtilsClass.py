@@ -415,7 +415,7 @@ class NGLWidgets:
 
     def make_movie(self, *args):
         # Remove gif preview
-        # self.output_gif.outputs=()
+        self.output_gif.outputs=()
         self.button_download.layout.visibility = "hidden"
         # Stop animation
         self.view._iplayer.children[0]._playing = False
@@ -432,7 +432,7 @@ class NGLWidgets:
         for widget in self.widgetList:
             widget.disabled = True
         n_frames = self.view.max_frame + 1
-        # self.output_movie.outputs=()
+        self.output_movie.outputs=()
         self.output_movie.append_stdout("Generating GIF, please wait...")
 
         tmpdir = tempfile.TemporaryDirectory(prefix="frames_", dir=".")
@@ -446,7 +446,7 @@ class NGLWidgets:
                     time.sleep(0.1)
                     counter += 1
                     if counter > 50:
-                        # self.output_movie.outputs=() 
+                        self.output_movie.outputs=() 
                         self.output_movie.append_stdout("Could not generate pictures")
                         raise Exception("Could not generate pictures")
                 path = os.path.join(tmpdir.name, f"frame{frame}.png")
@@ -472,7 +472,7 @@ class NGLWidgets:
         tmpdir.cleanup()
         
         # self.output_movie.clear_output() # NOT WORKING
-        # self.output_movie.outputs=() 
+        self.output_movie.outputs=() 
         # self.output_movie.append_stdout(50*" "+"\r")
         self.output_movie.append_stdout('GIF ready to download !')
 
