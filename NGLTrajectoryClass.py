@@ -1,31 +1,13 @@
-from pydoc import describe
-import nglview as nv
-import threading
-import moviepy.editor as mpy
-import time
-import tempfile
 import numpy as np
-import functools
 import os
 
 import matplotlib.pyplot as plt
 import ipywidgets as widgets
-from ipywidgets import HTML
-
-from ipyevents import Event
-import base64
 from IPython.display import display
 from ase import Atoms
-from ase.build import molecule
-from ase.calculators.emt import EMT
-from ase.optimize import BFGS
-from ase.vibrations import Vibrations
 from ase.io.trajectory import Trajectory
-from ase.units import kB
 from sympy import *
 from NGLUtilsClass import NGLWidgets
-
-import tempfile
 
 class NGLTrajectory(NGLWidgets):
     def __init__(self, trajectory):

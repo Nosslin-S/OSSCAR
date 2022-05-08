@@ -1,8 +1,3 @@
-##########
-# ipywidgets utils
-##########
-
-from click import progressbar
 import nglview as nv
 import threading
 import moviepy.editor as mpy
@@ -18,17 +13,9 @@ from ipywidgets import HTML, Label, HBox, VBox,IntSlider,HTMLMath,Output, Layout
 from ipyevents import Event
 import base64
 
-from ase.build import molecule
-from ase.calculators.emt import EMT
-from ase.optimize import BFGS
-from ase.vibrations import Vibrations
-from ase.io.trajectory import Trajectory
-from ase.units import kB
-
 from IPython.core.interactiveshell import InteractiveShell
 InteractiveShell.ast_node_interactivity = "all"
 from IPython.display import Image
-from pathlib import Path
 
 class NGLWidgets:
     output_movie_ = widgets.Output()

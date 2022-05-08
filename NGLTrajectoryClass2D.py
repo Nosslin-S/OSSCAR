@@ -1,30 +1,11 @@
-from doctest import OutputChecker
-from pydoc import describe
-import nglview as nv
-import threading
-import moviepy.editor as mpy
-import time
-import tempfile
 import numpy as np
-import functools
-import os
 
 import matplotlib.pyplot as plt
 import ipywidgets as widgets
 from ipywidgets import HTML, HBox, Output
 from IPython.display import display
-from ipyevents import Event
-import base64
-
-
-
 from ase import Atoms
-from ase.build import molecule
-from ase.calculators.emt import EMT
-from ase.optimize import BFGS
-from ase.vibrations import Vibrations
 from ase.io.trajectory import Trajectory
-from ase.units import kB
 from sympy import *
 from NGLUtilsClass import NGLWidgets
 from itertools import product
@@ -62,7 +43,7 @@ class NGLTrajectory2D(NGLWidgets):
         self.idx_y = 12
         self.init_delay=20
         self.nframes=51
-        
+
         self.ky_honey_array_honey=np.linspace(-1.5*2*np.pi/3,1.5*2*np.pi/3,61)
         self.ky_honey_array=np.linspace(-1.5*4*np.pi/(3*np.sqrt(3)),1.5*4*np.pi/(3*np.sqrt(3)),61)
 

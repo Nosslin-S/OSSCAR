@@ -1,19 +1,11 @@
-from xml.parsers.expat import model
-import nglview as nv
-import threading
-import moviepy.editor as mpy
 import time
-import tempfile
 import numpy as np
-import functools
+
 import os
 
 import ipywidgets as widgets
 from ipywidgets import HTML, Label, HBox, VBox,IntSlider,HTMLMath,Output, Layout
-
-from ipyevents import Event
-import base64
-
+from IPython.display import display
 from ase.build import molecule
 from ase.calculators.emt import EMT
 from ase.optimize import BFGS
