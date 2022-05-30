@@ -6,6 +6,7 @@ import tempfile
 import numpy as np
 import functools
 import os
+import shutil
 
 import ipywidgets as widgets
 from ipywidgets import HTML, Label, HBox, VBox,IntSlider,HTMLMath,Output, Layout
@@ -17,35 +18,36 @@ from IPython.core.interactiveshell import InteractiveShell
 InteractiveShell.ast_node_interactivity = "all"
 from IPython.display import Image
 
+import json
 class NGLWidgets:
-    output_movie_ = widgets.Output()
 
     def __init__(self, trajectory) -> None:
         
-        
+        self.tmp_dir=tempfile.TemporaryDirectory(prefix='user_', dir='.')
         self.traj = trajectory
 
         self.view = nv.show_asetraj(self.traj)
         self.flag = True
         self.name = []
         self.handler = []
-        self.folder = "vibrations"
+        
         self.idx = [5]
         self.zoom = 15
         self.layout_description=widgets.Layout(width="130px")
+        self.layout=Layout(width='200px')
         # Camera
 
-        layout = widgets.Layout(width="50px")
+        layout_camera = widgets.Layout(width="50px")
         style = {"description_width": "initial"}
-        self.button_x = widgets.Button(description="x", layout=layout)
-        self.button_y = widgets.Button(description="y", layout=layout)
-        self.button_z = widgets.Button(description="z", layout=layout)
+        self.button_x = widgets.Button(description="x", layout=layout_camera)
+        self.button_y = widgets.Button(description="y", layout=layout_camera)
+        self.button_z = widgets.Button(description="z", layout=layout_camera)
         self.camera_upload = widgets.FileUpload(
             accept=".txt",  # Accepted file extension e.g. '.txt', '.pdf', 'image/*', 'image/*,.pdf'
             multiple=False,  # True to accept multiple files upload else False
             description="Import camera position",
         )
-        layout=Layout(width='200px')
+        
         # Outputs
         self.output_text = widgets.Output()
         self.output_movie = widgets.Output()
@@ -53,6 +55,9 @@ class NGLWidgets:
         self.output_gif= widgets.Output()
         self.gif_link=widgets.HTML()
         self.output_download_button=Output()
+
+        self.output_camera_position=Output()
+        self.output_camera_position_error=Output()
         # Camera
         self.button_x.on_click(functools.partial(self.set_camera, direction="x"))
         self.button_y.on_click(functools.partial(self.set_camera, direction="y"))
@@ -65,7 +70,7 @@ class NGLWidgets:
             value="1080p",
             # description="Resolution",
             disabled=False,
-            layout=layout
+            layout=self.layout
             # layout=widgets.Layout(width="300px")
         )
         self.slider_speed_description=HTMLMath(r"Animation speed",layout=self.layout_description)
@@ -76,7 +81,7 @@ class NGLWidgets:
             step=0.1,
             # description="Animation speed",
             continuous_update=False,
-            layout=layout,
+            layout=self.layout,
             # style=style,
         )
 
@@ -107,12 +112,12 @@ class NGLWidgets:
         self.slider_amp_arrow = widgets.FloatSlider(
             value=2.0,
             min=0.1,
-            max=3.0,
+            max=5.01,
             step=0.1,
             # description=f'{"Arrow amplitude":<20}',
             continuous_update=False,
             # style={"description_width": "100px"},
-            layout=layout,
+            layout=self.layout,
         )
         self.tick_box_description=HTMLMath(r"Show arrows",layout=self.layout_description)
         self.tick_box = widgets.Checkbox(
@@ -131,7 +136,7 @@ class NGLWidgets:
             # description=f'{"Arrow radius":<20}',
             continuous_update=False,
             # style={"description_width": "100px"},
-            layout=layout,
+            layout=self.layout,
         )
 
         self.camera = widgets.VBox(
@@ -180,9 +185,30 @@ class NGLWidgets:
             max=0.25,
             step=0.01,
             continuous_update=False,
-            layout=layout,
+            layout=self.layout,
         )
         self.slider_atom_radius.observe(self.modifiy_representation,"value")
+        self.view.observe(self.on_orientation_change, names=['_camera_orientation'])
+        self.text_orientation=widgets.Textarea(value='Paste camera orientation here')
+        self.camera_orientation_description=HTMLMath(r"Camera orientation :",layout=self.layout_description)
+        self.text_orientation.observe(self.change_camera_position,names=['value'])
+
+    def on_orientation_change(self,*args):
+        with self.output_camera_position:
+            self.output_camera_position.clear_output()
+            position=[round(x,1) for x in self.view._camera_orientation]
+            print(position)
+
+    def change_camera_position(self,*args):
+        orientation=json.loads(self.text_orientation.value)
+        with self.output_camera_position_error:
+            self.output_camera_position_error.clear_output()
+            if type(orientation) is not list or len(orientation)!=16:
+                print("Orientation must be a length 16 list")
+            else:        
+                self.view._set_camera_orientation(orientation)
+
+
     def set_camera(self, *args, direction="x"):
         # See here for rotation matrix https://www.brainvoyager.com/bv/doc/UsersGuide/CoordsAndTransforms/SpatialTransformationMatrices.html
 
@@ -435,8 +461,7 @@ class NGLWidgets:
         self.output_movie.outputs=()
         self.output_movie.append_stdout("Generating GIF, please wait...")
 
-        tmpdir = tempfile.TemporaryDirectory(prefix="frames_", dir=".")
-        self.tmpdir = tmpdir
+        tmp_dir_frames = tempfile.TemporaryDirectory(prefix="frames_", dir=self.tmp_dir.name)
         try:
             for frame in range(n_frames):
                 counter = 0
@@ -449,14 +474,14 @@ class NGLWidgets:
                         self.output_movie.outputs=() 
                         self.output_movie.append_stdout("Could not generate pictures")
                         raise Exception("Could not generate pictures")
-                path = os.path.join(tmpdir.name, f"frame{frame}.png")
+                path = os.path.join(tmp_dir_frames.name, f"frame{frame}.png")
                 with open(path, "wb") as f:
                     f.write(im.value)
 
             # Resets view dimensions to original
             self.set_view_dimensions()
 
-            self.compile_movie(directory=tmpdir.name, n_frames=n_frames)
+            self.compile_movie(directory=tmp_dir_frames.name, n_frames=n_frames)
             self.show_gif_preview()
             # self.button_download.layout.visibility = "visible"
             
@@ -469,12 +494,12 @@ class NGLWidgets:
             # Resets view dimension to original
             self.set_view_dimensions()
             
-        tmpdir.cleanup()
+        tmp_dir_frames.cleanup()
         
         # self.output_movie.clear_output() # NOT WORKING
         self.output_movie.outputs=() 
         # self.output_movie.append_stdout(50*" "+"\r")
-        self.output_movie.append_stdout('GIF ready to download !')
+        self.output_movie.append_stdout('Right click on GIF to download it')
 
     def compile_movie(self, *args, directory, n_frames):
 
@@ -484,11 +509,12 @@ class NGLWidgets:
         frame_per_second = round(1000 / (25 / self.slider_speed.value))
         im = mpy.ImageSequenceClip(imagefiles, fps=frame_per_second)
         with tempfile.NamedTemporaryFile(
-            dir=directory, prefix="movie_", suffix=".gif", delete=False
+            dir='.', prefix="movie_", suffix=".gif", delete=False
         ) as tmpFile:
-            self.tmpFileName_movie = os.path.basename(tmpFile.name)
+            tmpFileName_movie = os.path.basename(tmpFile.name)
+            self.tmpFileName_movie=os.path.join(self.tmp_dir.name,tmpFileName_movie)
             im.write_gif(self.tmpFileName_movie, fps=frame_per_second, verbose=False, logger=None)
-
+        # shutil.move(tmpFileName_movie,self.tmpFileName_movie)
         # self.change_movie()
         # self.view._iplayer.children[0]._playing = True
 
@@ -544,8 +570,8 @@ class NGLWidgets:
         b64 = base64.b64encode(gif_bytes)
         payload = b64.decode()
         filename="movie.gif"
-        # html_code=f'<a href="data:image/png;base64,{payload}" width="{width}" height="{height}"> Download GIF</a>'
-        # self.gif_link.value=html_code
+        html_code=f'<a href="data:image/png;base64,{payload}" > Download GIF</a>' # width="{width}" height="{height}"
+        self.gif_link.value=html_code
         html_code = f"""<html>
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -559,8 +585,8 @@ class NGLWidgets:
         """
         
         # html_code = html_code.format(payload=payload, filename=filename)
-        self.button_download.value = html_code
-        self.button_download.layout.visibility = "visible"
+        # self.button_download.value = html_code
+        # self.button_download.layout.visibility = "visible"
         # self.remove_movie() # Does not work
 
     def remove_movie(self,*args):

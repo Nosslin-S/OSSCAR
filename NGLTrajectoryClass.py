@@ -23,7 +23,7 @@ class NGLTrajectory(NGLWidgets):
             step=0.01,
             # description="Amplitude",
             continuous_update=False,
-            layout=widgets.Layout(width="200px")
+            layout=self.layout
         )
         self.slider_amplitude_description=widgets.HTMLMath(r"Amplitude",layout=self.layout_description)
 
@@ -33,7 +33,7 @@ class NGLTrajectory(NGLWidgets):
             max=5,
             step=0.1,
             continuous_update=False,
-            layout=widgets.Layout(width="200px")
+            layout=self.layout
         )
         self.slider_M_description=widgets.HTMLMath(r"$\frac{\text{M}_{\text{red}}}{\text{M}_{\text{grey}}}$",layout=self.layout_description)
 
@@ -98,6 +98,76 @@ class NGLTrajectory(NGLWidgets):
         #     [widgets.VBox([self.slider_amplitude, self.slider_M]), self.fig.canvas]
         # )
         self.init_delay=20
+
+    def addArrows(self, *args):
+        self.removeArrows()
+
+        positions = list(self.traj[0].get_positions().flatten())
+
+        n_atoms = int(len(positions) / 3)
+        color = n_atoms * [0, 1, 0]
+        radius = n_atoms * [0.1]
+        self.view._js(
+            f"""
+        var shape = new NGL.Shape("my_shape")
+
+        var arrowBuffer = new NGL.ArrowBuffer({{position1: new Float32Array({positions}),
+        position2: new Float32Array({positions}),
+        color: new Float32Array({color}),
+        radius: new Float32Array({radius})
+        }})
+
+        shape.addBuffer(arrowBuffer)
+        globalThis.arrowBuffer = arrowBuffer;
+        var shapeComp = this.stage.addComponentFromObject(shape)
+        shapeComp.addRepresentation("buffer")
+        shapeComp.autoView()
+        """
+        )
+        # Remove observe callable to avoid visual glitch
+        if self.handler:
+            self.view.unobserve(self.handler.pop(), names=["frame"])
+
+        def on_frame_change(change):
+            frame = change["new"]
+
+            positions = self.traj[frame].get_positions()
+            positions2 = positions+self.steps[:,:,:,frame].reshape(-1,3)*self.slider_amp_arrow.value*10
+            positions=list(positions.flatten())
+            positions2=list(positions2.flatten())
+            n_atoms = int(len(positions) / 3)
+            radius = n_atoms * [0.1]
+
+            if self.tick_box.value:
+                radius = n_atoms * [self.slider_arrow_radius.value]
+                self.view._js(
+                    f"""
+                globalThis.arrowBuffer.setAttributes({{
+                position1: new Float32Array({positions}),
+                position2: new Float32Array({positions2}),
+                radius: new Float32Array({radius})
+                }})
+                
+                this.stage.viewer.requestRender()
+                """
+                )
+            else:
+                radius = n_atoms * [0.0]
+                self.view._js(
+                    f"""
+                globalThis.arrowBuffer.setAttributes({{
+                position1: new Float32Array({positions}),
+                position2: new Float32Array({positions}),
+                radius: new Float32Array({radius})
+                }})
+
+                this.stage.viewer.requestRender()
+                """
+                )
+
+        self.view.observe(on_frame_change, names=["frame"])
+        self.handler.append(on_frame_change)
+
     def compute_dispersion(self,*args):
         if self.button_chain.value == 'monoatomic':
             a = Symbol("a")
@@ -187,37 +257,37 @@ class NGLTrajectory(NGLWidgets):
             self.A_op = A_2
 
     def compute_trajectory_1D(self, *args):
-        # tmpdirname=self.tmpdir.name
-        tmpdirname='.'
-        filename=os.path.join(tmpdirname,"trajectory_1d.traj")
+
         self.ka = self.ka_array[self.idx]
-        traj=Trajectory(filename, "w")
+        traj=Trajectory(os.path.join(self.tmp_dir.name,"atoms_1d.traj"), "w")
+        
         if self.button_chain.value == 'monoatomic':
             ax = np.array([1, 0, 0])
             w=self.w[self.idx]
             atom_positions = []
             K = np.array([self.ka, 0, 0])
             
-
-            for frame in np.linspace(0, 50, 50):
+            
+            self.steps=np.zeros((20,1,3,51))
+            for frame in np.linspace(0, 50, 51):
                 atom_positions = []
                 if w != 0:
                     t = 2 * np.pi / 50 / np.real(w) * frame
                 else:
                     t = 0
                 for i in range(20):
-                    atom_positions_ = (
-                        -5 * ax
-                        + i * ax*0.5
-                        + np.real(
+                    step=np.real(
                             self.slider_amplitude.value
                             * np.exp(1j * w * t)
                             * np.exp(1j * i * np.dot(K, ax))
-                        )
-                        * ax
+                        )* ax
+                    atom_positions_ = (
+                        -5 * ax
+                        + i * ax*0.5
+                        + step
                     )
                     atom_positions.append(atom_positions_)
-
+                    self.steps[i,0,:,int(frame)]+=step
                 atoms = Atoms(int(len(atom_positions)) * "C", positions=atom_positions)
                 traj.write(atoms)
 
@@ -243,42 +313,47 @@ class NGLTrajectory(NGLWidgets):
             atom_positions = []
             K = np.array([self.ka, 0, 0])
         
-
-            for frame in np.linspace(0, 50, 50):
+            self.steps=np.zeros((20,1,3,51))
+            for frame in np.linspace(0, 50, 51):
                 atom_positions = []
                 if self.w != 0:
                     t = 2 * np.pi / 50 / np.real(self.w) * frame
                 else:
                     t = 0
                 for i in range(10):
-                    atom_positions_1 = (
-                        -5 * ax
-                        + i * ax
-                        + np.real(
+                    step=np.real(
                             self.slider_amplitude.value
                             * amp1
                             * np.exp(1j * self.w * t)
                             * np.exp(1j * i * np.dot(K, ax))
-                        )
-                        * ax
-                    )
-                    atom_positions_2 = (
+                        )* ax
+                    atom_positions_1 = (
                         -5 * ax
-                        + (1 / 2 * ax + i * ax)
-                        + np.real(
+                        + i * ax
+                        + step
+                    )
+                    self.steps[2*i,0,:,int(frame)]+=step
+
+                    step=np.real(
                             self.slider_amplitude.value
                             * amp2
                             * np.exp(1j * self.w * t)
                             * np.exp(1j * i * np.dot(K, ax))
-                        )
-                        * ax
+                        ) * ax
+                    atom_positions_2 = (
+                        -5 * ax
+                        + (1 / 2 * ax + i * ax)
+                        + step
                     )
+                    self.steps[2*i+1,0,:,int(frame)]+=step
+
                     atom_positions.append(atom_positions_1)
                     atom_positions.append(atom_positions_2)
 
                 atoms = Atoms(int(len(atom_positions) / 2) * "CO", positions=atom_positions)
                 traj.write(atoms)
-        new_traj=Trajectory(filename)
+
+        new_traj=Trajectory(os.path.join(self.tmp_dir.name,"atoms_1d.traj"))
         self.replace_trajectory(
                     traj = new_traj, representation="spacefill"
                 )
