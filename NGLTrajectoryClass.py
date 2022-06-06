@@ -13,7 +13,7 @@ class NGLTrajectory(NGLWidgets):
     def __init__(self, trajectory):
         super().__init__(trajectory)
         
-        self.output_ratio=widgets.Output()
+        
 
         
         self.slider_amplitude = widgets.FloatSlider(
@@ -25,7 +25,7 @@ class NGLTrajectory(NGLWidgets):
             continuous_update=False,
             layout=self.layout
         )
-        self.slider_amplitude_description=widgets.HTMLMath(r"Amplitude",layout=self.layout_description)
+        self.slider_amplitude_description=widgets.HTMLMath(r"Oscillations amplitude",layout=self.layout_description)
 
         self.slider_M = widgets.FloatSlider(
             value=2,
@@ -57,30 +57,14 @@ class NGLTrajectory(NGLWidgets):
         self.slider_amplitude.observe(self.compute_trajectory_1D, "value")
         self.slider_M.observe(self.compute_trajectory_1D, "value")
         self.slider_M.observe(self.update_band_M, "value")
-        # self.slider_C.observe()
         self.button_chain.observe(self.compute_dispersion, "value")
         self.button_chain.observe(self.compute_trajectory_1D, "value")
         self.button_chain.observe(self.band_dispersion, "value")
         self.button_chain.observe(self.show_slider_M,"value")
-        plt.ioff()
-        px = 1 / plt.rcParams["figure.dpi"]
-        self.fig, self.ax = plt.subplots(figsize=(500 * px, 300 * px))
 
-        self.fig.canvas.toolbar_visible = False
-        self.fig.canvas.header_visible = False
-        self.fig.canvas.footer_visible = False
 
-        (self.lines_ac,) = self.ax.plot([], [], c="blue")
-        (self.lines_op,) = self.ax.plot([], [], c="orange")
-        (self.lines,) = self.ax.plot([], [], c="blue")
-        (self.lines_ac_out,) = self.ax.plot([], [],'--', c="blue",alpha=0.5)
-        (self.lines_op_out,) = self.ax.plot([], [],'--', c="orange",alpha=0.5)
-        (self.lines_out,) = self.ax.plot([], [],'--', c="blue",alpha=0.5)
-        (self.point,) = self.ax.plot([], [], ".", c="crimson", markersize=15)
-        self.ax.set_xlabel("k")
-        self.ax.set_ylabel("$\omega$")
-        self.fig.set_tight_layout(tight=True)
-        plt.ion()
+
+        self.output_ratio=widgets.Output()
 
         self.optic = False
         self.ka = 0
@@ -89,17 +73,14 @@ class NGLTrajectory(NGLWidgets):
         self.a=1
         self.x=0
         self.y=0
-        # self.compute_dispersion()
 
-        # self.compute_trajectory_1D()
-        # self.band_dispersion()
-
-        # self.atoms = widgets.HBox(
-        #     [widgets.VBox([self.slider_amplitude, self.slider_M]), self.fig.canvas]
-        # )
         self.init_delay=20
 
+
+
+
     def addArrows(self, *args):
+        # Need to remove arrows first
         self.removeArrows()
 
         positions = list(self.traj[0].get_positions().flatten())
@@ -107,6 +88,8 @@ class NGLTrajectory(NGLWidgets):
         n_atoms = int(len(positions) / 3)
         color = n_atoms * [0, 1, 0]
         radius = n_atoms * [0.1]
+
+        # Initialize arrows
         self.view._js(
             f"""
         var shape = new NGL.Shape("my_shape")
@@ -133,12 +116,15 @@ class NGLTrajectory(NGLWidgets):
 
             positions = self.traj[frame].get_positions()
             positions2 = positions+self.steps[:,:,:,frame].reshape(-1,3)*self.slider_amp_arrow.value*10
+
+            # JavaScript only reads lists from Python
             positions=list(positions.flatten())
             positions2=list(positions2.flatten())
+
             n_atoms = int(len(positions) / 3)
             radius = n_atoms * [0.1]
 
-            if self.tick_box.value:
+            if self.tick_box_arrows.value:
                 radius = n_atoms * [self.slider_arrow_radius.value]
                 self.view._js(
                     f"""
@@ -151,6 +137,8 @@ class NGLTrajectory(NGLWidgets):
                 this.stage.viewer.requestRender()
                 """
                 )
+
+            # If we do not want arrows, set their radius to 0
             else:
                 radius = n_atoms * [0.0]
                 self.view._js(
@@ -166,9 +154,13 @@ class NGLTrajectory(NGLWidgets):
                 )
 
         self.view.observe(on_frame_change, names=["frame"])
+        # Keep in memory callable function to remove it later on
         self.handler.append(on_frame_change)
 
     def compute_dispersion(self,*args):
+        '''
+        Compute the dynamical equations for the monoatomic and diatomic chains
+        '''
         if self.button_chain.value == 'monoatomic':
             a = Symbol("a")
             a1 = Matrix([a])
@@ -176,6 +168,7 @@ class NGLTrajectory(NGLWidgets):
             u, w = symbols("u w")
             M1, C = symbols("M1 C")
 
+            # Nearest neighboors 
             atom_positions = Matrix([[-1], [1]])
             RHS = 0 * a
             for i in range(atom_positions.rows):
@@ -190,6 +183,8 @@ class NGLTrajectory(NGLWidgets):
             Eq=RHS-LHS
             sols=solve(Eq, w)
             Sol=sols[0]
+
+            # Create function to compute w on the fly
             self.w_ = lambdify((k, C), Sol.subs({ M1: 1, a: 1}))
 
             self.compute_dispersion_relation()
@@ -222,8 +217,10 @@ class NGLTrajectory(NGLWidgets):
 
             matrix = linear_eq_to_matrix([RHS1, RHS2], [u, v])[0]
             matrix.simplify()
+            # Returns the eigenvalues and eigenvectors
             eig1, eig2 = matrix.eigenvects()
 
+            # Create function to compute amplitudes and frequencies on the fly
             self.A_1 = lambdify(
                 (k, M2, C, a), eig1[2][0][0].subs({ M1: 1})
             )
@@ -236,6 +233,9 @@ class NGLTrajectory(NGLWidgets):
             self.compute_dispersion_relation()
 
     def compute_dispersion_relation(self, *args):
+        '''
+        Compute frequency and oscillation amplitude for the full range of k values.
+        '''
         if self.button_chain.value == 'monoatomic':
             self.w = self.w_(self.ka_array, self.slider_C.value)
 
@@ -257,7 +257,8 @@ class NGLTrajectory(NGLWidgets):
             self.A_op = A_2
 
     def compute_trajectory_1D(self, *args):
-
+        
+        # Get the k value corresponding to the one selected on plot
         self.ka = self.ka_array[self.idx]
         traj=Trajectory(os.path.join(self.tmp_dir.name,"atoms_1d.traj"), "w")
         
@@ -266,16 +267,17 @@ class NGLTrajectory(NGLWidgets):
             w=self.w[self.idx]
             atom_positions = []
             K = np.array([self.ka, 0, 0])
-            
-            
+
+            # Matrix to save the atoms displacements to compute arrows
             self.steps=np.zeros((20,1,3,51))
             for frame in np.linspace(0, 50, 51):
                 atom_positions = []
                 if w != 0:
                     t = 2 * np.pi / 50 / np.real(w) * frame
-                else:
+                else: # If frequency is zero, we fix atoms, to avoid pure translation
                     t = 0
                 for i in range(20):
+                    # Displacement is real part of the amplitude value
                     step=np.real(
                             self.slider_amplitude.value
                             * np.exp(1j * w * t)
@@ -301,18 +303,15 @@ class NGLTrajectory(NGLWidgets):
 
             ax = np.array([1, 0, 0])
 
-            # normalize the relative amplitudes so that the positions don't explode if one atom static
-            # nums1 = [self.A / np.absolute(self.A), self.A]
-            # nums2 = [1 / np.absolute(self.A), 1]
-            # idx_min=np.abs(nums1).argmin()
-            # amp1 = nums1[idx_min]
-            # amp2 = nums2[idx_min]
             amp_vector=np.array([self.A,1])
+            # Normalize amplitude
             amp_vector=amp_vector/np.linalg.norm(amp_vector)
             amp1,amp2=amp_vector[0],amp_vector[1]
+
             atom_positions = []
             K = np.array([self.ka, 0, 0])
-        
+
+            # Matrix to save the atoms displacements to compute arrows
             self.steps=np.zeros((20,1,3,51))
             for frame in np.linspace(0, 50, 51):
                 atom_positions = []
@@ -321,6 +320,7 @@ class NGLTrajectory(NGLWidgets):
                 else:
                     t = 0
                 for i in range(10):
+                    # Displacement is real part of the amplitude value
                     step=np.real(
                             self.slider_amplitude.value
                             * amp1
@@ -334,6 +334,7 @@ class NGLTrajectory(NGLWidgets):
                     )
                     self.steps[2*i,0,:,int(frame)]+=step
 
+                    # Displacement is real part of the amplitude value
                     step=np.real(
                             self.slider_amplitude.value
                             * amp2
@@ -357,11 +358,41 @@ class NGLTrajectory(NGLWidgets):
         self.replace_trajectory(
                     traj = new_traj, representation="spacefill"
                 )
-        # time.sleep(0.1)
-        # tmpdir.cleanup()
+        # Little zoom to make atoms closer
         self.view.control.zoom(0.25)
 
+    def initialize_dispersion_plot(self,*args):
+        plt.ioff()
+        px = 1 / plt.rcParams["figure.dpi"]
+        self.fig, self.ax = plt.subplots(figsize=(500 * px, 300 * px))
+
+        self.fig.canvas.toolbar_visible = False
+        self.fig.canvas.header_visible = False
+        self.fig.canvas.footer_visible = False
+
+        # Dispersion lines inside first BZ
+        (self.lines_ac,) = self.ax.plot([], [], c="blue")
+        (self.lines_op,) = self.ax.plot([], [], c="orange")
+        (self.lines,) = self.ax.plot([], [], c="blue")
+
+        # Dispersion lines outside first BZ
+        (self.lines_ac_out,) = self.ax.plot([], [],'--', c="blue",alpha=0.5)
+        (self.lines_op_out,) = self.ax.plot([], [],'--', c="orange",alpha=0.5)
+        (self.lines_out,) = self.ax.plot([], [],'--', c="blue",alpha=0.5)
+
+        # Selected frequency point
+        (self.point,) = self.ax.plot([], [], ".", c="crimson", markersize=15)
+        
+        self.ax.set_xlabel("k")
+        self.ax.set_ylabel("$\omega$")
+        self.fig.set_tight_layout(tight=True)
+        plt.ion()
+
     def band_dispersion(self,*args):
+        '''
+        Update band dispersion graph
+        '''
+        # Get size of a pixel
         px = 1 / plt.rcParams["figure.dpi"]
         plt.ioff()
         
@@ -371,8 +402,8 @@ class NGLTrajectory(NGLWidgets):
             self.ax.set_xticklabels([r'$-\frac{\pi}{a}$','','0','',r'$\frac{\pi}{a}$'])
             self.lines_out.set_data((self.ka_array,self.w))
             self.lines.set_data((self.ka_array[25:75],self.w[25:75]))
-            # self.lines_out.set_data((np.append(self.ka_array[:25],self.ka_array[75:]),np.append(self.w[:25],self.w[75:])))
             
+            # Remove diatomic chain lines
             self.lines_ac.set_data(([], []))
             self.lines_op.set_data(([], []))
             self.lines_ac_out.set_data(([], []))
@@ -387,11 +418,12 @@ class NGLTrajectory(NGLWidgets):
             self.lines_op_out.set_data((self.ka_array,self.w_op))
             self.lines_ac.set_data((self.ka_array[25:75],self.w_ac[25:75]))
             self.lines_op.set_data((self.ka_array[25:75],self.w_op[25:75]))
-            # self.lines_ac.set_data((np.append(self.ka_array[:25],self.ka_array[75:]),np.append(self.w_ac[:25],self.w_ac[75:])))
-            # self.lines_op.set_data((np.append(self.ka_array[:25],self.ka_array[75:]),np.append(self.w_op[:25],self.w_op[75:])))
+            
+            # Remove monoatomic chain lines
             self.lines.set_data(([], []))
             self.lines_out.set_data(([], []))
 
+        # First BZ limit
         self.ax.plot([-np.pi,-np.pi],[0,2.2],'k--',linewidth=1)
         self.ax.plot([np.pi,np.pi],[0,2.2],'k--',linewidth=1)
 
@@ -403,21 +435,10 @@ class NGLTrajectory(NGLWidgets):
         self.fig.canvas.mpl_connect("button_press_event", self.onclick)
         plt.ion()
 
-    def update_band_M(self, *args):
-        self.compute_dispersion_relation()
-        # Re-adjust frequency to closest one
-        self.idx = (np.abs(self.ka_array - self.x)).argmin()
-        self.ka = self.ka_array[self.idx]
-        w = self.compute_distance(y=self.y)
-        self.point.set_data(self.ka, w)
-        self.compute_trajectory_1D()
-        # Update band dispersion lines
-        self.lines_ac.set_data((self.ka_array[25:75], self.w_ac[25:75]))
-        self.lines_op.set_data((self.ka_array[25:75], self.w_op[25:75]))
-        self.lines_ac_out.set_data((self.ka_array,self.w_ac))
-        self.lines_op_out.set_data((self.ka_array,self.w_op))
-
     def onclick(self, event):
+        '''
+        Determine frequency and k point upon click on band dispersion figure
+        '''
         self.x = event.xdata
         self.y = event.ydata
 
@@ -434,10 +455,9 @@ class NGLTrajectory(NGLWidgets):
         self.point.set_data(self.ka, w)
         self.compute_trajectory_1D()
 
-        
     def compute_distance(self, y):
-        # Compute vertical distance between point and acoustic/optical branches
-        # And return corresponding frequency
+        '''Compute vertical distance between point and acoustic/optical branches
+        And return corresponding frequency'''
         if np.abs((y - self.w_op[self.idx])) < np.abs((y - self.w_ac[self.idx])):
             self.optic = True
             return self.w_op[self.idx]
@@ -445,7 +465,33 @@ class NGLTrajectory(NGLWidgets):
             self.optic = False
             return self.w_ac[self.idx]
 
+    def update_band_M(self, *args):
+        '''
+        Recompute band dispersion upon mass ratio update
+        '''
+        self.compute_dispersion_relation()
+
+        # Re-adjust frequency to closest one
+        self.idx = (np.abs(self.ka_array - self.x)).argmin()
+
+        self.ka = self.ka_array[self.idx]
+        w = self.compute_distance(y=self.y)
+
+        self.point.set_data(self.ka, w)
+
+        self.compute_trajectory_1D()
+        # Update band dispersion lines
+        self.lines_ac.set_data((self.ka_array[25:75], self.w_ac[25:75]))
+        self.lines_op.set_data((self.ka_array[25:75], self.w_op[25:75]))
+        self.lines_ac_out.set_data((self.ka_array,self.w_ac))
+        self.lines_op_out.set_data((self.ka_array,self.w_op))
+
+
+
     def show_slider_M(self,*args):
+        '''
+        Show mass slider if diatomic chain selected
+        '''
         if self.button_chain.value == 'monoatomic':
             self.output_ratio.clear_output()
         elif self.button_chain.value == 'diatomic':
